@@ -81,7 +81,7 @@ final class SpotifyDataService: ObservableObject {
         guard await ensureAuthenticated() else { return [] }
         do {
             let saved = try await SpotifyAPI.likedSongs()
-            return saved.items.map(SpotifyMapper.toTrack)
+            return saved.items.map { SpotifyMapper.toTrack($0.track) }
         } catch {
             print("SpotifyDataService: likedSongs failed — \(error)")
             return []
