@@ -4,10 +4,10 @@ import WebKit
 /// WebView-based PoToken generator using BotGuard.
 /// Port of PoTokenWebView.kt — uses WKWebView to run BotGuard and generate poTokens.
 @MainActor
-final class PoTokenWebView: NSObject {
+final class PoTokenWebView: NSObject, WKScriptMessageHandler {
     private var webView: WKWebView?
-    private var minterContinuation: ((Result<PoTokenWebView, Error>) -> Void)?
-    private var poTokenContinuations: [String: (Result<String, Error>) -> Void] = [:]
+    private var minterContinuation: CheckedContinuation<PoTokenWebView, Error>?
+    private var poTokenContinuations: [String: CheckedContinuation<String, Error>] = [:]
     private var expirationInstant: Date = .distantPast
 
     private static let googleAPIKey = "AIzaSyDyT5W0Jh49F30Pqqtyfdf7pDLFKLJoAnw"
@@ -19,12 +19,7 @@ final class PoTokenWebView: NSObject {
     static func getNewPoTokenGenerator() async throws -> PoTokenWebView {
         try await withCheckedThrowingContinuation { cont in
             let pot = PoTokenWebView()
-            pot.minterContinuation = { result in
-                switch result {
-                case .success(let wv): cont.resume(returning: wv)
-                case .failure(let err): cont.resume(throwing: err)
-                }
-            }
+            pot.minterContinuation = cont
             pot.setupWebView()
             pot.loadHtmlAndObtainBotguard()
         }
@@ -32,20 +27,16 @@ final class PoTokenWebView: NSObject {
 
     private func setupWebView() {
         let config = WKWebViewConfiguration()
-        config.javaScriptEnabled = true
         let wv = WKWebView(frame: .zero, configuration: config)
         wv.navigationDelegate = self
-        let handler = PoTokenMessageHandler(generator: self)
-        wv.configuration.userContentController.add(handler, name: "poTokenBridge")
+        wv.configuration.userContentController.add(self, name: "poTokenBridge")
         wv.customUserAgent = Self.userAgent
         self.webView = wv
     }
 
     private func loadHtmlAndObtainBotguard() {
         let html = """
-        <!DOCTYPE html><html><head>
-        <script src="https://www.youtube.com/api/jnn/v1/Create"></script>
-        <script>
+        <!DOCTYPE html><html><head></head><body><script>
         function downloadAndRunBotguard() {
             fetch('https://www.youtube.com/api/jnn/v1/Create', {
                 method: 'POST',
@@ -55,17 +46,16 @@ final class PoTokenWebView: NSObject {
                 var data = JSON.parse(body);
                 runBotGuard(data).then(function(result) {
                     this.webPoSignalOutput = result.webPoSignalOutput;
-                    poTokenBridge.postMessage({type:'botguardResult', response: result.botguardResponse});
+                    webkit.messageHandlers.poTokenBridge.postMessage({type:'botguardResult', response: result.botguardResponse});
                 }, function(error) {
-                    poTokenBridge.postMessage({type:'initError', error: String(error)});
+                    webkit.messageHandlers.poTokenBridge.postMessage({type:'initError', error: String(error)});
                 });
-            }).catch(function(e) { poTokenBridge.postMessage({type:'initError', error: String(e)}); });
+            }).catch(function(e) { webkit.messageHandlers.poTokenBridge.postMessage({type:'initError', error: String(e)}); });
         }
-        </script></head><body>
-        <script>downloadAndRunBotguard();</script>
-        </body></html>
+        downloadAndRunBotguard();
+        </script></body></html>
         """
-        webView?.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com")!)
+        webView?.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
     }
 
     private func obtainIntegrityToken(_ botguardResponse: String) {
@@ -82,45 +72,53 @@ final class PoTokenWebView: NSObject {
         Task {
             guard let (data, _) = try? await URLSession.shared.data(for: request),
                   let responseBody = String(data: data, encoding: .utf8) else {
-                minterContinuation?(.failure(PoTokenError.initializationFailed("GenerateIT request failed")))
+                minterContinuation?.resume(throwing: PoTokenError.initializationFailed("GenerateIT failed"))
                 minterContinuation = nil
                 return
             }
-            guard let (integrityToken, expiresIn) = parseIntegrityTokenData(responseBody) else {
-                minterContinuation?(.failure(PoTokenError.initializationFailed("Failed to parse integrity token")))
+            guard let parsed = parseGenerateITResponse(responseBody) else {
+                minterContinuation?.resume(throwing: PoTokenError.initializationFailed("Parse failed"))
                 minterContinuation = nil
                 return
             }
-            expirationInstant = Date().addingTimeInterval(Double(expiresIn) - 600)
+            expirationInstant = Date().addingTimeInterval(Double(parsed.expiresIn) - 600)
             let js = """
             try {
-                this.integrityToken = \(integrityToken)
+                this.integrityToken = \(parsed.token)
                 createPoTokenMinter(webPoSignalOutput, integrityToken).then(function() {
-                    poTokenBridge.postMessage({type:'minterCreated'});
+                    webkit.messageHandlers.poTokenBridge.postMessage({type:'minterCreated'});
                 }).catch(function(error) {
-                    poTokenBridge.postMessage({type:'initError', error: String(error)});
+                    webkit.messageHandlers.poTokenBridge.postMessage({type:'initError', error: String(error)});
                 });
-            } catch(error) { poTokenBridge.postMessage({type:'initError', error: String(error)}); }
+            } catch(error) { webkit.messageHandlers.poTokenBridge.postMessage({type:'initError', error: String(error)}); }
             """
-            webView?.evaluateJavaScript(js)
+            webView?.evaluateJavaScript(js, completionHandler: nil)
         }
     }
 
-    private func parseIntegrityTokenData(_ body: String) -> (String, Int)? {
+    private struct IntegrityParsed {
+        let token: String
+        let expiresIn: Int
+    }
+
+    private func parseGenerateITResponse(_ body: String) -> IntegrityParsed? {
         guard let data = body.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let response = json["response"] as? [String: Any],
-              let innerResponse = response["innerResponse"] as? [String: Any],
-              let integrityTokenResponse = innerResponse["integrityTokenResponse"] as? [String: Any],
-              let integrityToken = integrityTokenResponse["integrityToken"] as? String,
-              let expiresIn = integrityTokenResponse["expiresInSeconds"] as? Int else {
-            return nil
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if let response = json["response"] as? [String: Any],
+           let inner = response["innerResponse"] as? [String: Any],
+           let itr = inner["integrityTokenResponse"] as? [String: Any],
+           let token = itr["integrityToken"] as? String,
+           let expiresIn = itr["expiresInSeconds"] as? Int {
+            return IntegrityParsed(token: token, expiresIn: expiresIn)
         }
-        return ("\(integrityToken)", expiresIn)
+        if let token = json["integrityToken"] as? String, let expiresIn = json["expiresInSeconds"] as? Int {
+            return IntegrityParsed(token: token, expiresIn: expiresIn)
+        }
+        return nil
     }
 
     func generatePoToken(_ identifier: String) async throws -> String {
-        return try await withCheckedThrowingContinuation { cont in
+        try await withCheckedThrowingContinuation { cont in
             poTokenContinuations[identifier] = cont
             let u8Array = identifier.utf8.map(String.init).joined(separator: ",")
             let js = """
@@ -128,61 +126,50 @@ final class PoTokenWebView: NSObject {
                 var u8 = new Uint8Array([\(u8Array)]);
                 obtainPoToken(u8).then(function(poTokenU8) {
                     var str = poTokenU8.join(",");
-                    poTokenBridge.postMessage({type:'poTokenResult', identifier:'\(identifier)', result: str});
+                    webkit.messageHandlers.poTokenBridge.postMessage({type:'poTokenResult', identifier:'\(identifier)', result: str});
                 }).catch(function(error) {
-                    poTokenBridge.postMessage({type:'poTokenError', identifier:'\(identifier)', error: String(error)});
+                    webkit.messageHandlers.poTokenBridge.postMessage({type:'poTokenError', identifier:'\(identifier)', error: String(error)});
                 });
-            } catch(error) { poTokenBridge.postMessage({type:'poTokenError', identifier:'\(identifier)', error: String(error)}); }
+            } catch(error) { webkit.messageHandlers.poTokenBridge.postMessage({type:'poTokenError', identifier:'\(identifier)', error: String(error)}); }
             """
-            webView?.evaluateJavaScript(js)
+            webView?.evaluateJavaScript(js, completionHandler: nil)
         }
     }
 
     func close() {
-        webView?.configuration.userContentController.removeAllUserScripts()
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "poTokenBridge")
         webView?.loadHTMLString("", baseURL: nil)
         webView = nil
     }
 
-    nonisolated func handleMessage(_ type: String, dict: [String: Any]) {
-        Task { @MainActor in
-            switch type {
-            case "botguardResult":
-                obtainIntegrityToken(dict["response"] as? String ?? "")
-            case "initError":
-                let error = PoTokenError.initializationFailed(dict["error"] as? String ?? "")
-                minterContinuation?(.failure(error))
-                minterContinuation = nil
-            case "minterCreated":
-                minterContinuation?(.success(self))
-                minterContinuation = nil
-            case "poTokenResult":
-                let id = dict["identifier"] as? String ?? ""
-                let result = dict["result"] as? String ?? ""
-                let u8Values = result.split(separator: ",").compactMap { UInt8($0) }
-                let base64 = Data(u8Values).base64EncodedString()
-                poTokenContinuations[id]?(.success(base64))
-                poTokenContinuations.removeValue(forKey: id)
-            case "poTokenError":
-                let id = dict["identifier"] as? String ?? ""
-                poTokenContinuations[id]?(.failure(PoTokenError.initializationFailed(dict["error"] as? String ?? "")))
-                poTokenContinuations.removeValue(forKey: id)
-            default:
-                break
-            }
+    func userContentController(_ uc: WKUserContentController, didReceive msg: WKScriptMessage) {
+        guard let body = msg.body as? [String: Any], let type = body["type"] as? String else { return }
+        switch type {
+        case "botguardResult":
+            obtainIntegrityToken(body["response"] as? String ?? "")
+        case "initError":
+            minterContinuation?.resume(throwing: PoTokenError.initializationFailed(body["error"] as? String ?? ""))
+            minterContinuation = nil
+        case "minterCreated":
+            minterContinuation?.resume(returning: self)
+            minterContinuation = nil
+        case "poTokenResult":
+            let id = body["identifier"] as? String ?? ""
+            let result = body["result"] as? String ?? ""
+            let u8Values = result.components(separatedBy: ",").compactMap { UInt8($0) }
+            let base64 = Data(u8Values).base64EncodedString()
+            poTokenContinuations[id]?.resume(returning: base64)
+            poTokenContinuations.removeValue(forKey: id)
+        case "poTokenError":
+            let id = body["identifier"] as? String ?? ""
+            poTokenContinuations[id]?.resume(throwing: PoTokenError.initializationFailed(body["error"] as? String ?? ""))
+            poTokenContinuations.removeValue(forKey: id)
+        default:
+            break
         }
     }
 }
 
 extension PoTokenWebView: WKNavigationDelegate {
-    nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {}
-}
-
-class PoTokenMessageHandler: NSObject, WKScriptMessageHandler {
-    let generator: PoTokenWebView
-    init(generator: PoTokenWebView) { self.generator = generator }
-    nonisolated func userContentController(_ uc: WKUserContentController, didReceive msg: WKScriptMessage) {
-        guard let body = msg.body as? [String: Any], let type = body["type"] as? String else { return }
-        generator.handleMessage(type, dict: body)
-    }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {}
 }

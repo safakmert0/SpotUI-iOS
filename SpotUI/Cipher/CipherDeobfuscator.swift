@@ -22,24 +22,28 @@ enum CipherDeobfuscator {
     }
 
     static func transformNParamInUrl(_ url: String) async -> String {
-        guard let range = url.range(of: #"[?&]n=([^&]+)"#, options: .regularExpression) else { return url }
-        let nMatch = url[range]
-        guard let nEqRange = nMatch.range(of: "n=") else { return url }
-        let nValue = String(url[nMatch.upperBound...]).components(separatedBy: "&").first ?? ""
-        let decoded = nValue.removingPercentEncoding ?? nValue
+        guard let _ = url.range(of: "n=", options: .literal) else { return url }
         guard let webView = await getOrCreateWebView(forceRefresh: false) else { return url }
         guard webView.nFunctionAvailable else { return url }
-        do {
-            let transformed = try await webView.transformN(decoded)
-            let encoded = transformed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? transformed
-            var result = url
-            if let r = result.range(of: #"([?&])n=[^&]+"#, options: .regularExpression) {
-                result.replaceSubrange(r, with: "\(result[r.lowerBound])n=\(encoded)")
+        if let nRange = url.range(of: #"[?&]n=([^&]+)"#, options: .regularExpression) {
+            let match = url[nRange]
+            guard let eqIdx = match.firstIndex(of: "=") else { return url }
+            let nValue = String(url[match.index(after: eqIdx)...]).components(separatedBy: "&").first ?? ""
+            let decoded = nValue.removingPercentEncoding ?? nValue
+            do {
+                let transformed = try await webView.transformN(decoded)
+                let encoded = transformed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? transformed
+                var result = url
+                if let r = result.range(of: #"[?&]n=[^&]+"#, options: .regularExpression) {
+                    let prefix = result[result.index(before: r.lowerBound)..<r.lowerBound]
+                    result.replaceSubrange(r, with: "\(prefix)n=\(encoded)")
+                }
+                return result
+            } catch {
+                return url
             }
-            return result
-        } catch {
-            return url
         }
+        return url
     }
 
     private static func deobfuscateInternal(signatureCipher: String, videoId: String, isRetry: Bool) async throws -> String {
