@@ -145,27 +145,10 @@ final class AudioEngine: ObservableObject {
             guard let url = URL(string: streamUrl) else { return }
 
             let playerItem = AVPlayerItem(url: url)
-            let metadata = AVMutableMetadataItem()
-            metadata.keySpace = .common
-            metadata.key = AVMetadataKey.commonKeyTitle as NSString
-            metadata.value = track.title as NSString
-            playerItem.externalMetadata.append(metadata)
-
-            let artistMeta = AVMutableMetadataItem()
-            artistMeta.keySpace = .common
-            artistMeta.key = AVMetadataKey.commonKeyArtist as NSString
-            artistMeta.value = track.singer as NSString
-            playerItem.externalMetadata.append(artistMeta)
 
             if !track.coverUri.isEmpty, let coverURL = URL(string: track.coverUri) {
                 if let data = try? Data(contentsOf: coverURL),
                    let image = UIImage(data: data) {
-                    let artMeta = AVMutableMetadataItem()
-                    artMeta.keySpace = .common
-                    artMeta.key = AVMetadataKey.commonKeyArtwork as NSString
-                    artMeta.value = image.pngData() as NSData?
-                    playerItem.externalMetadata.append(artMeta)
-                }
             }
 
             if let player {
@@ -315,8 +298,8 @@ final class AudioEngine: ObservableObject {
         info[MPMediaItemPropertyTitle] = track.title
         info[MPMediaItemPropertyArtist] = track.singer
         info[MPMediaItemPropertyAlbumTitle] = track.album
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentPosition
-        info[MPNowPlayingInfoPropertyPlaybackDuration] = duration
+        info[MPMediaItemPropertyPlaybackDuration] = currentPosition
+        info[MPMediaItemPropertyPlaybackDuration] = NSNumber(value: duration)
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }

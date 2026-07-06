@@ -117,7 +117,7 @@ struct PlayerScreen: View {
                 }
             }
             .padding(.horizontal, 24)
-            .onChange(of: audioEngine.currentPosition) { _, newValue in
+            .onReceive(audioEngine.$currentPosition) { newValue in
                 if !isDraggingSlider {
                     sliderValue = newValue
                 }

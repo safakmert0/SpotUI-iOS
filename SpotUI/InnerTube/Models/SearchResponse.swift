@@ -9,10 +9,10 @@ struct SearchContents: Codable {
 }
 
 struct TabbedSearchResults: Codable {
-    let tabs: [Tab]?
+    let tabs: [YTTab]?
 }
 
-struct Tab: Codable {
+struct YTTab: Codable {
     let tabRenderer: TabRenderer?
 }
 

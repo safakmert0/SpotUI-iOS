@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Tab bar navigation — port of MainBottomNavigation.kt.
-enum Tab: String, CaseIterable {
+enum AppTab: String, CaseIterable {
     case home = "Home"
     case search = "Search"
     case library = "Library"

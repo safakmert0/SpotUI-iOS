@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Root view with tab bar and mini player overlay.
 struct RootView: View {
-    @State private var selectedTab: Tab = .home
+    @State private var selectedTab: AppTab = .home
     @State private var showPlayer = false
     @EnvironmentObject var audioEngine: AudioEngine
 
@@ -11,16 +11,16 @@ struct RootView: View {
             NavigationStack {
                 TabView(selection: $selectedTab) {
                     HomeScreen()
-                        .tabItem { Label(Tab.home.rawValue, systemImage: Tab.home.icon) }
-                        .tag(Tab.home)
+                        .tabItem { Label(AppTab.home.rawValue, systemImage: AppTab.home.icon) }
+                        .tag(AppTab.home)
 
                     SearchScreen()
-                        .tabItem { Label(Tab.search.rawValue, systemImage: Tab.search.icon) }
-                        .tag(Tab.search)
+                        .tabItem { Label(AppTab.search.rawValue, systemImage: AppTab.search.icon) }
+                        .tag(AppTab.search)
 
                     LibraryScreen()
-                        .tabItem { Label(Tab.library.rawValue, systemImage: Tab.library.icon) }
-                        .tag(Tab.library)
+                        .tabItem { Label(AppTab.library.rawValue, systemImage: AppTab.library.icon) }
+                        .tag(AppTab.library)
                 }
                 .navigationDestination(for: Route.self) { route in
                     switch route {

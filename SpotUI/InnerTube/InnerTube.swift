@@ -5,7 +5,7 @@ import Foundation
 final class InnerTube {
     static let shared = InnerTube()
 
-    private let client = HTTPClient.shared
+    private 
     private let baseURL = "https://music.youtube.com/youtubei/v1"
 
     var visitorData: String?
@@ -41,7 +41,7 @@ final class InnerTube {
         let bodyData = try JSONSerialization.data(withJSONObject: body)
 
         let urlString = "\(baseURL)/search?key=\(client.apiKey)"
-        let data = try await client.post(urlString, body: bodyData, headers: [
+        let data = try await HTTPClient.shared.post(urlString, body: bodyData, headers: [
             "Content-Type": "application/json",
             "X-Goog-Visitor-Id": visitorData ?? "",
         ])
@@ -57,7 +57,7 @@ final class InnerTube {
         let bodyData = try JSONSerialization.data(withJSONObject: body)
 
         let urlString = "\(baseURL)/player?key=\(client.apiKey)"
-        let data = try await self.client.post(urlString, body: bodyData, headers: [
+        let data = try await HTTPClient.shared.post(urlString, body: bodyData, headers: [
             "Content-Type": "application/json",
             "X-Goog-Visitor-Id": visitorData ?? "",
         ])

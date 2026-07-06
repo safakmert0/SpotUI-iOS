@@ -4,6 +4,7 @@ struct AlbumScreen: View {
     let name: String
     let artist: String
     @EnvironmentObject var audioEngine: AudioEngine
+    @EnvironmentObject var dataService: SpotifyDataService
     @State private var tracks: [Track] = []
 
     var body: some View {
