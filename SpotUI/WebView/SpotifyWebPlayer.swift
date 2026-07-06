@@ -132,7 +132,8 @@ final class SpotifyWebPlayer: NSObject, ObservableObject {
         guard let wv = webView, durationMs > 0 else { return }
         let frac = Double(positionMs) / Double(durationMs)
         wv.evaluateJavaScript(seekJs(frac))
-        self.positionMs = Int64((frac * Double(durationMs)).clamped(to: 0...Double(durationMs)))
+        let pos = frac * Double(durationMs)
+        self.positionMs = Int64(min(max(pos, 0), Double(durationMs)))
     }
 
     func release() {

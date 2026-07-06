@@ -116,7 +116,7 @@ final class SpotifyDataService: ObservableObject {
                 id: artist.id,
                 name: artist.name,
                 avatarImage: artist.images.first?.url ?? "",
-                topTracks: topTracks.map { ArtistTrackUI(song: SpotifyMapper.toTrack($0)) },
+                topTracks: topTracks.map { ArtistTrackUI(song: SpotifyMapper.toTrack($0), playcount: nil) },
                 popularReleases: albums.items.map(SpotifyMapper.toAlbum)
             )
         } catch {

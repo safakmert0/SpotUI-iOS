@@ -195,13 +195,13 @@ final class AudioEngine: ObservableObject {
 
     // MARK: - Build play query
 
-    static func buildPlayQuery(spotifyTrackId: String, title: String, artist: String) -> String {
+    nonisolated static func buildPlayQuery(spotifyTrackId: String, title: String, artist: String) -> String {
         let searchText = [cleanTitle(title), artist].filter { !$0.isEmpty }.joined(separator: " ")
         if spotifyTrackId.isEmpty { return searchText }
         return "spotify:track:\(spotifyTrackId)|\(searchText)"
     }
 
-    private static func cleanTitle(_ title: String) -> String {
+    private nonisolated static func cleanTitle(_ title: String) -> String {
         let pattern = try! NSRegularExpression(pattern: "\\s*[\\(\\[]\\s*(feat|ft)\\..*?[\\)\\]]", options: .caseInsensitive)
         let range = NSRange(title.startIndex..., in: title)
         return pattern.stringByReplacingMatches(in: title, options: [], range: range, withTemplate: "").trimmingCharacters(in: .whitespaces)

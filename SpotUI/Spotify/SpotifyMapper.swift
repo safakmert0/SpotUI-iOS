@@ -107,11 +107,16 @@ enum SpotifyMapper {
     private static func bigramSimilarity(_ a: String, _ b: String) -> Double {
         if a == b { return 1.0 }
         guard a.count >= 2, b.count >= 2 else { return 0.0 }
-        let aBigrams = Set(a.windows(ofCount: 2).map(String.init))
-        let bBigrams = Set(b.windows(ofCount: 2).map(String.init))
+        let aBigrams = Set(bigrams(a))
+        let bBigrams = Set(bigrams(b))
         guard !aBigrams.isEmpty, !bBigrams.isEmpty else { return 0.0 }
         let intersection = aBigrams.filter(bBigrams.contains).count
         return Double(2 * intersection) / Double(aBigrams.count + bBigrams.count)
+    }
+
+    private static func bigrams(_ s: String) -> [String] {
+        let chars = Array(s)
+        return (0..<(chars.count - 1)).map { String(chars[$0...$0+1]) }
     }
 
     private static func computeDurationScore(_ spotifyMs: Int, _ candidateSec: Int?) -> Double {
