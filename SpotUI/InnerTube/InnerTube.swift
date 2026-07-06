@@ -66,46 +66,27 @@ final class InnerTube {
     // MARK: - Private
 
     private func buildRequestBody(client: ClientConfig, query: String, filter: String) -> JSONObject {
-        var context: JSONObject = [
-            "client": [
-                "clientName": client.clientName,
-                "clientVersion": client.clientVersion,
-                "hl": locale.language,
-                "gl": locale.country,
-            ]
+        var clientDict: [String: Any] = [
+            "clientName": client.clientName,
+            "clientVersion": client.clientVersion,
+            "hl": locale.language,
+            "gl": locale.country,
         ]
-        if let sdk = client.androidSdkVersion {
-            context["client"]?["androidSdkVersion"] = sdk
-        }
-        if let visitor = visitorData {
-            context["client"]?["visitorData"] = visitor
-        }
-        return [
-            "context": context,
-            "query": query,
-            "params": filterParam(for: filter),
-        ]
+        if let sdk = client.androidSdkVersion { clientDict["androidSdkVersion"] = sdk }
+        if let visitor = visitorData { clientDict["visitorData"] = visitor }
+        return ["context": ["client": clientDict], "query": query, "params": filterParam(for: filter)]
     }
 
     private func buildPlayerBody(client: ClientConfig, videoId: String) -> JSONObject {
-        var context: JSONObject = [
-            "client": [
-                "clientName": client.clientName,
-                "clientVersion": client.clientVersion,
-                "hl": locale.language,
-                "gl": locale.country,
-            ]
+        var clientDict: [String: Any] = [
+            "clientName": client.clientName,
+            "clientVersion": client.clientVersion,
+            "hl": locale.language,
+            "gl": locale.country,
         ]
-        if let sdk = client.androidSdkVersion {
-            context["client"]?["androidSdkVersion"] = sdk
-        }
-        if let visitor = visitorData {
-            context["client"]?["visitorData"] = visitor
-        }
-        return [
-            "context": context,
-            "videoId": videoId,
-        ]
+        if let sdk = client.androidSdkVersion { clientDict["androidSdkVersion"] = sdk }
+        if let visitor = visitorData { clientDict["visitorData"] = visitor }
+        return ["context": ["client": clientDict], "videoId": videoId]
     }
 
     private func filterParam(for filter: String) -> String {
