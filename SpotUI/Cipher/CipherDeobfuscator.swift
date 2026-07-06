@@ -22,13 +22,21 @@ enum CipherDeobfuscator {
     }
 
     static func transformNParamInUrl(_ url: String) async -> String {
-        guard let nMatch = url.firstMatch(of: /[?&]n=([^&]+)/) else { return url }
-        let nValue = String(nMatch.1).removingPercentEncoding ?? String(nMatch.1)
+        guard let range = url.range(of: #"[?&]n=([^&]+)"#, options: .regularExpression) else { return url }
+        let nMatch = url[range]
+        guard let nEqRange = nMatch.range(of: "n=") else { return url }
+        let nValue = String(url[nMatch.upperBound...]).components(separatedBy: "&").first ?? ""
+        let decoded = nValue.removingPercentEncoding ?? nValue
         guard let webView = await getOrCreateWebView(forceRefresh: false) else { return url }
         guard webView.nFunctionAvailable else { return url }
         do {
-            let transformed = try await webView.transformN(nValue)
-            return url.replacingFirst(of: /([?&])n=[^&]+/, with: "$1n=\(transformed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? transformed)")
+            let transformed = try await webView.transformN(decoded)
+            let encoded = transformed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? transformed
+            var result = url
+            if let r = result.range(of: #"([?&])n=[^&]+"#, options: .regularExpression) {
+                result.replaceSubrange(r, with: "\(result[r.lowerBound])n=\(encoded)")
+            }
+            return result
         } catch {
             return url
         }
@@ -45,7 +53,8 @@ enum CipherDeobfuscator {
         }
         let deobfuscatedSig = try await webView.deobfuscateSignature(obfuscatedSig)
         let separator = baseUrl.contains("?") ? "&" : "?"
-        return "\(baseUrl)\(separator)\(sigParam)=\(deobfuscatedSig.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? deobfuscatedSig)"
+        let encoded = deobfuscatedSig.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? deobfuscatedSig
+        return "\(baseUrl)\(separator)\(sigParam)=\(encoded)"
     }
 
     private static func getOrCreateWebView(forceRefresh: Bool) async -> CipherWebView? {
@@ -68,7 +77,7 @@ enum CipherDeobfuscator {
 
     private static func parseQueryParams(_ query: String) -> [String: String] {
         var result: [String: String] = [:]
-        for pair in query.split(separator: "&") {
+        for pair in query.components(separatedBy: "&") {
             if let idx = pair.firstIndex(of: "=") {
                 let key = String(pair[pair.startIndex..<idx]).removingPercentEncoding ?? String(pair[pair.startIndex..<idx])
                 let value = String(pair[pair.index(after: idx)...]).removingPercentEncoding ?? String(pair[pair.index(after: idx)...])

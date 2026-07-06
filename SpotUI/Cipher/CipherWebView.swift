@@ -4,15 +4,14 @@ import WebKit
 /// WebView-based cipher executor for YouTube stream URL deobfuscation.
 /// Port of CipherWebView.kt — uses WKWebView to execute signature decipher and n-transform.
 @MainActor
-final class CipherWebView: NSObject {
+final class CipherWebView: NSObject, WKScriptMessageHandler {
     private var webView: WKWebView?
-    private var sigContinuation: ((Result<String, Error>) -> Void)?
-    private var nContinuation: ((Result<String, Error>) -> Void)?
-    private var initContinuation: ((Result<CipherWebView, Error>) -> Void)?
+    private var sigContinuation: CheckedContinuation<String, Error>?
+    private var nContinuation: CheckedContinuation<String, Error>?
+    private var initContinuation: CheckedContinuation<CipherWebView, Error>?
 
     var nFunctionAvailable = false
     var sigFunctionAvailable = false
-    var usingHardcodedMode = false
 
     private let playerJs: String
     private let sigInfo: FunctionNameExtractor.SigFunctionInfo?
@@ -26,88 +25,84 @@ final class CipherWebView: NSObject {
     }
 
     static func create(playerJs: String, sigInfo: FunctionNameExtractor.SigFunctionInfo?, nFuncInfo: FunctionNameExtractor.NFunctionInfo?) async throws -> CipherWebView {
-        let webView = CipherWebView(playerJs: playerJs, sigInfo: sigInfo, nFuncInfo: nFuncInfo)
+        let wv = CipherWebView(playerJs: playerJs, sigInfo: sigInfo, nFuncInfo: nFuncInfo)
         return try await withCheckedThrowingContinuation { cont in
-            webView.initContinuation = { result in
-                switch result {
-                case .success(let wv): cont.resume(returning: wv)
-                case .failure(let err): cont.resume(throwing: err)
-                }
-            }
-            webView.setupWebView()
-            webView.loadPlayerJs()
+            wv.initContinuation = cont
+            wv.setupAndLoad()
         }
     }
 
-    private func setupWebView() {
+    private func setupAndLoad() {
         let config = WKWebViewConfiguration()
-        config.javaScriptEnabled = true
-        let wv = WKWebView(frame: .zero, configuration: config)
+        let wv = WKWebView(frame: CGRect(x: 0, y: -300, width: 320, height: 240), configuration: config)
         wv.navigationDelegate = self
-        let handler = CipherMessageHandler(cipher: self)
-        wv.configuration.userContentController.add(handler, name: "cipherBridge")
+        wv.configuration.userContentController.add(self, name: "cipherBridge")
         self.webView = wv
-    }
 
-    private func loadPlayerJs() {
-        let sigExport: String
+        let exportSig: String
         if let sig = sigInfo {
-            if let constArgs = sig.constantArgs, let preprocess = sig.preprocessFunc, let prepArgs = sig.preprocessArgs {
-                let constStr = constArgs.map(String.init).joined(separator: ", ")
+            if let args = sig.constantArgs, let prep = sig.preprocessFunc, let prepArgs = sig.preprocessArgs {
+                let constStr = args.map(String.init).joined(separator: ", ")
                 let prepStr = prepArgs.map(String.init).joined(separator: ", ")
-                sigExport = "window._cipherSigFunc = function(sig) { return \(sig.name)(\(constStr), \(preprocess)(\(prepStr, sig))); };"
-            } else if let constArgs = sig.constantArgs {
-                let argsStr = constArgs.map(String.init).joined(separator: ", ")
-                sigExport = "window._cipherSigFunc = function(sig) { return \(sig.name)(\(argsStr), sig); };"
-            } else if sig.isHardcoded {
-                sigExport = "window._cipherSigFunc = typeof \(sig.name) !== 'undefined' ? \(sig.name) : null;"
+                exportSig = "window._cipherSigFunc = function(sig) { return \(sig.name)(\(constStr), \(preprocessFuncName(prep))(\(prepStr), sig)); };"
+            } else if let args = sig.constantArgs {
+                let argsStr = args.map(String.init).joined(separator: ", ")
+                exportSig = "window._cipherSigFunc = function(sig) { return \(sig.name)(\(argsStr), sig); };"
             } else {
-                sigExport = "window._cipherSigFunc = typeof \(sig.name) !== 'undefined' ? \(sig.name) : null;"
+                exportSig = "window._cipherSigFunc = typeof \(sig.name) !== 'undefined' ? \(sig.name) : null;"
             }
         } else {
-            sigExport = ""
+            exportSig = ""
         }
 
-        let nExport: String
-        if let nFunc = nFuncInfo {
-            if let constArgs = nFunc.constantArgs {
-                let argsStr = constArgs.map(String.init).joined(separator: ", ")
-                nExport = "window._nTransformFunc = function(n) { return \(nFunc.name)(\(argsStr), n); };"
-            } else if let idx = nFunc.arrayIndex {
-                nExport = "window._nTransformFunc = typeof \(nFunc.name) !== 'undefined' ? \(nFunc.name)[\(idx)] : null;"
+        let exportN: String
+        if let nf = nFuncInfo {
+            if let args = nf.constantArgs {
+                let argsStr = args.map(String.init).joined(separator: ", ")
+                exportN = "window._nTransformFunc = function(n) { return \(nf.name)(\(argsStr), n); };"
+            } else if let idx = nf.arrayIndex {
+                exportN = "window._nTransformFunc = typeof \(nf.name) !== 'undefined' ? \(nf.name)[\(idx)] : null;"
             } else {
-                nExport = "window._nTransformFunc = typeof \(nFunc.name) !== 'undefined' ? \(nFunc.name) : null;"
+                exportN = "window._nTransformFunc = typeof \(nf.name) !== 'undefined' ? \(nf.name) : null;"
             }
         } else {
-            nExport = ""
+            exportN = ""
         }
 
-        let exports = [sigExport, nExport].filter { !$0.isEmpty }.joined(separator: " ")
+        let exports = [exportSig, exportN].filter { !$0.isEmpty }.joined(separator: " ")
         let exportCode = !exports.isEmpty ? "; \(exports)" : ""
-        let modifiedJs = playerJs.replacingOccurrences(of: "})(_yt_player);", with: "\(exportCode })(_yt_player);")
+        let marker = "})(_yt_player);"
+        let modifiedJs: String
+        if playerJs.contains(marker) {
+            modifiedJs = playerJs.replacingOccurrences(of: marker, with: "\(exportCode) \(marker)")
+        } else {
+            modifiedJs = playerJs + "\n" + exportCode
+        }
+
+        let escapedJs = modifiedJs.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'").replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
 
         let html = """
         <!DOCTYPE html><html><head><script>
         function deobfuscateSig(funcName, constantArg, obfuscatedSig) {
             try {
                 var func = window._cipherSigFunc;
-                if (typeof func !== 'function') { cipherBridge.postMessage({type:'sigError', error:'func not found'}); return; }
+                if (typeof func !== 'function') { webkit.messageHandlers.cipherBridge.postMessage({type:'sigError', error:'func not found'}); return; }
                 var result;
                 if (func.length === 1) { result = func(obfuscatedSig); }
                 else if (constantArg !== null) { result = func(constantArg, obfuscatedSig); }
                 else { result = func(obfuscatedSig); }
-                if (result == null) { cipherBridge.postMessage({type:'sigError', error:'null result'}); return; }
-                cipherBridge.postMessage({type:'sigResult', result: String(result)});
-            } catch(e) { cipherBridge.postMessage({type:'sigError', error: String(e)}); }
+                if (result == null) { webkit.messageHandlers.cipherBridge.postMessage({type:'sigError', error:'null result'}); return; }
+                webkit.messageHandlers.cipherBridge.postMessage({type:'sigResult', result: String(result)});
+            } catch(e) { webkit.messageHandlers.cipherBridge.postMessage({type:'sigError', error: String(e)}); }
         }
         function transformN(nValue) {
             try {
                 var func = window._nTransformFunc;
-                if (typeof func !== 'function') { cipherBridge.postMessage({type:'nError', error:'func not found'}); return; }
+                if (typeof func !== 'function') { webkit.messageHandlers.cipherBridge.postMessage({type:'nError', error:'func not found'}); return; }
                 var result = func(nValue);
-                if (result == null) { cipherBridge.postMessage({type:'nError', error:'null result'}); return; }
-                cipherBridge.postMessage({type:'nResult', result: String(result)});
-            } catch(e) { cipherBridge.postMessage({type:'nError', error: String(e)}); }
+                if (result == null) { webkit.messageHandlers.cipherBridge.postMessage({type:'nError', error:'null result'}); return; }
+                webkit.messageHandlers.cipherBridge.postMessage({type:'nResult', result: String(result)});
+            } catch(e) { webkit.messageHandlers.cipherBridge.postMessage({type:'nError', error: String(e)}); }
         }
         function discoverAndInit() {
             var sigOk = typeof window._cipherSigFunc === 'function';
@@ -134,10 +129,10 @@ final class CipherWebView: NSObject {
                     }
                 } catch(e) {}
             }
-            cipherBridge.postMessage({type:'initDone', sigOk: sigOk, nOk: nOk});
+            webkit.messageHandlers.cipherBridge.postMessage({type:'initDone', sigOk: sigOk, nOk: nOk});
         }
         </script></head><body><script>
-        var js = \(escapeJs(modifiedJs));
+        var js = '\(escapedJs)';
         var s = document.createElement('script');
         s.textContent = js;
         document.head.appendChild(s);
@@ -145,81 +140,66 @@ final class CipherWebView: NSObject {
         </script></body></html>
         """
 
-        webView?.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com")!)
+        wv.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
     }
+
+    private func preprocessFuncName(_ name: String) -> String { name }
 
     func deobfuscateSignature(_ obfuscatedSig: String) async throws -> String {
         guard sigFunctionAvailable else { throw CipherError.sigNotAvailable }
         let constArgJs = sigInfo.map { $0.constantArg.map(String.init) ?? "null" } ?? "null"
-        let js = "deobfuscateSig('\(sigInfo?.name ?? "")', \(constArgJs), '\(escapeJs(obfuscatedSig))')"
-        return try await evaluateJS(js, continuationKey: "sig")
-    }
-
-    func transformN(_ nValue: String) async throws -> String {
-        guard nFunctionAvailable else { throw CipherError.nNotAvailable }
-        let js = "transformN('\(escapeJs(nValue))')"
-        return try await evaluateJS(js, continuationKey: "n")
-    }
-
-    func close() {
-        webView?.configuration.userContentController.removeAllUserScripts()
-        webView?.loadHTMLString("", baseURL: nil)
-        webView = nil
-    }
-
-    private func evaluateJS(_ js: String, continuationKey: String) async throws -> String {
+        let escapedSig = obfuscatedSig.replacingOccurrences(of: "'", with: "\\'")
+        let js = "deobfuscateSig('\(sigInfo?.name ?? "")', \(constArgJs), '\(escapedSig)')"
         return try await withCheckedThrowingContinuation { cont in
-            if continuationKey == "sig" { sigContinuation = cont }
-            else { nContinuation = cont }
+            sigContinuation = cont
             webView?.evaluateJavaScript(js)
         }
     }
 
-    private func escapeJs(_ s: String) -> String {
-        s.replacingOccurrences(of: "\\", with: "\\\\")
-         .replacingOccurrences(of: "'", with: "\\'")
-         .replacingOccurrences(of: "\n", with: "\\n")
-         .replacingOccurrences(of: "\r", with: "\\r")
+    func transformN(_ nValue: String) async throws -> String {
+        guard nFunctionAvailable else { throw CipherError.nNotAvailable }
+        let escaped = nValue.replacingOccurrences(of: "'", with: "\\'")
+        let js = "transformN('\(escaped)')"
+        return try await withCheckedThrowingContinuation { cont in
+            nContinuation = cont
+            webView?.evaluateJavaScript(js)
+        }
     }
 
-    nonisolated func handleMessage(_ type: String, dict: [String: Any]) {
-        Task { @MainActor in
-            switch type {
-            case "sigResult":
-                sigContinuation?(.success(dict["result"] as? String ?? ""))
-                sigContinuation = nil
-            case "sigError":
-                sigContinuation?(.failure(CipherError.sigFailed(dict["error"] as? String ?? "")))
-                sigContinuation = nil
-            case "nResult":
-                nContinuation?(.success(dict["result"] as? String ?? ""))
-                nContinuation = nil
-            case "nError":
-                nContinuation?(.failure(CipherError.nFailed(dict["error"] as? String ?? "")))
-                nContinuation = nil
-            case "initDone":
-                sigFunctionAvailable = dict["sigOk"] as? Bool ?? false
-                nFunctionAvailable = dict["nOk"] as? Bool ?? false
-                initContinuation?(.success(self))
-                initContinuation = nil
-            default:
-                break
-            }
+    func close() {
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "cipherBridge")
+        webView?.loadHTMLString("", baseURL: nil)
+        webView = nil
+    }
+
+    func userContentController(_ uc: WKUserContentController, didReceive msg: WKScriptMessage) {
+        guard let body = msg.body as? [String: Any], let type = body["type"] as? String else { return }
+        switch type {
+        case "sigResult":
+            sigContinuation?.resume(returning: body["result"] as? String ?? "")
+            sigContinuation = nil
+        case "sigError":
+            sigContinuation?.resume(throwing: CipherError.sigFailed(body["error"] as? String ?? ""))
+            sigContinuation = nil
+        case "nResult":
+            nContinuation?.resume(returning: body["result"] as? String ?? "")
+            nContinuation = nil
+        case "nError":
+            nContinuation?.resume(throwing: CipherError.nFailed(body["error"] as? String ?? ""))
+            nContinuation = nil
+        case "initDone":
+            sigFunctionAvailable = body["sigOk"] as? Bool ?? false
+            nFunctionAvailable = body["nOk"] as? Bool ?? false
+            initContinuation?.resume(returning: self)
+            initContinuation = nil
+        default:
+            break
         }
     }
 }
 
 extension CipherWebView: WKNavigationDelegate {
-    nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {}
-}
-
-class CipherMessageHandler: NSObject, WKScriptMessageHandler {
-    let cipher: CipherWebView
-    init(cipher: CipherWebView) { self.cipher = cipher }
-    nonisolated func userContentController(_ uc: WKUserContentController, didReceive msg: WKScriptMessage) {
-        guard let body = msg.body as? [String: Any], let type = body["type"] as? String else { return }
-        cipher.handleMessage(type, dict: body)
-    }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {}
 }
 
 enum CipherError: Error, LocalizedError {
@@ -231,7 +211,7 @@ enum CipherError: Error, LocalizedError {
         switch self {
         case .sigNotAvailable: return "Signature function not available"
         case .nNotAvailable: return "N-transform function not available"
-        case .sigFailed(let msg): return "Sig deobfuscation failed: \(msg)"
+        case .sigFailed(let msg): return "Sig failed: \(msg)"
         case .nFailed(let msg): return "N-transform failed: \(msg)"
         }
     }

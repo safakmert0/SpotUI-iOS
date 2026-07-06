@@ -43,8 +43,9 @@ struct HistoryScreen: View {
 }
 
 /// Simple listening history persistence using UserDefaults.
-enum ListeningHistory {
+final class ListeningHistory {
     static let shared = ListeningHistory()
+    private init() {}
 
     private let key = "listening_history"
     private let maxEntries = 200

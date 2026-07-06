@@ -1,8 +1,7 @@
 import Foundation
-import CryptoKit
 
 /// Extracts cipher function names from YouTube's player.js.
-/// Port of FunctionNameExtractor.kt — handles regex patterns and hardcoded configs.
+/// Port of FunctionNameExtractor.kt — uses NSRegularExpression for compatibility.
 enum FunctionNameExtractor {
 
     struct SigFunctionInfo {
@@ -50,43 +49,59 @@ enum FunctionNameExtractor {
         )
     ]
 
-    private static let qArrayPattern = /var\s+Q\s*=\s*"[^"]+"\s*\.\s*split\s*\(\s*"\}"\s*\)/
+    private static func regex(_ pattern: String) -> NSRegularExpression {
+        try! NSRegularExpression(pattern: pattern, options: [])
+    }
 
-    private static let playerHashPatterns: [Regex] = [
-        /jsUrl['":\s]+[^"']*?\/player\/([a-f0-9]{8})\//,
-        /player_ias\.vflset\/[^/]+\/([a-f0-9]{8})\//,
-        /\/s\/player\/([a-f0-9]{8})\//
+    private static let qArrayRegex = regex(#"var\s+Q\s*=\s*"[^"]+"\s*\.\s*split\s*\(\s*"\}"\s*\)"#)
+
+    private static let playerHashRegexes = [
+        regex(#"jsUrl['":\s]+[^"']*?/player/([a-f0-9]{8})/"#),
+        regex(#"player_ias\.vflset/[^/]+/([a-f0-9]{8})/"#),
+        regex(#"/s/player/([a-f0-9]{8})/"#),
     ]
 
-    private static let sigFunctionPatterns: [Regex] = [
-        /&&\s*\(\s*[a-zA-Z0-9$]+\s*=\s*([a-zA-Z0-9$]+)\s*\(\s*(\d+)\s*,\s*decodeURIComponent\s*\(\s*[a-zA-Z0-9$]+\s*\)/,
-        /\b[cs]\s*&&\s*[adf]\.set\([^,]+\s*,\s*encodeURIComponent\(([a-zA-Z0-9$]+)\(/,
-        /\b[a-zA-Z0-9]+\s*&&\s*[a-zA-Z0-9]+\.set\([^,]+\s*,\s*encodeURIComponent\(([a-zA-Z0-9$]+)\(/,
-        /\bm=([a-zA-Z0-9$]{2,})\(decodeURIComponent\(h\.s\)\)/,
-        /\bc\s*&&\s*d\.set\([^,]+\s*,\s*(?:encodeURIComponent\s*\()([a-zA-Z0-9$]+)\(/,
-        /\bc\s*&&\s*[a-z]\.set\([^,]+\s*,\s*encodeURIComponent\(([a-zA-Z0-9$]+)\(/
+    private static let sigFunctionRegexes = [
+        regex(#"&&\s*\(\s*[a-zA-Z0-9$]+\s*=\s*([a-zA-Z0-9$]+)\s*\(\s*(\d+)\s*,\s*decodeURIComponent\s*\(\s*[a-zA-Z0-9$]+\s*\)"#),
+        regex(#"\b[cs]\s*&&\s*[adf]\.set\([^,]+\s*,\s*encodeURIComponent\(([a-zA-Z0-9$]+)\("#),
+        regex(#"\b[a-zA-Z0-9]+\s*&&\s*[a-zA-Z0-9]+\.set\([^,]+\s*,\s*encodeURIComponent\(([a-zA-Z0-9$]+)\("#),
+        regex(#"\bm=([a-zA-Z0-9$]{2,})\(decodeURIComponent\(h\.s\)\)"#),
+        regex(#"\bc\s*&&\s*d\.set\([^,]+\s*,\s*(?:encodeURIComponent\s*\()([a-zA-Z0-9$]+)\("#),
+        regex(#"\bc\s*&&\s*[a-z]\.set\([^,]+\s*,\s*encodeURIComponent\(([a-zA-Z0-9$]+)\("#),
     ]
 
-    private static let nFunctionPatterns: [Regex] = [
-        /\.get\("n"\)\)&&\(b=([a-zA-Z0-9$]+)(?:\[(\d+)\])?\(([a-zA-Z0-9])\)/,
-        /\.get\("n"\)\)\s*&&\s*\(([a-zA-Z0-9$]+)\s*=\s*([a-zA-Z0-9$]+)(?:\[(\d+)\])?\(\1\)/,
-        /\(\s*([a-zA-Z0-9$]+)\s*=\s*String\.fromCharCode\(110\)/,
-        /([a-zA-Z0-9$]+)\s*=\s*function\([a-zA-Z0-9]\)\s*\{[^}]*?enhanced_except_/
+    private static let nFunctionRegexes = [
+        regex(#"\.get\("n"\)\)&&\(b=([a-zA-Z0-9$]+)(?:\[(\d+)\])?\(([a-zA-Z0-9])\)"#),
+        regex(#"\.get\("n"\)\)\s*&&\s*\(([a-zA-Z0-9$]+)\s*=\s*([a-zA-Z0-9$]+)(?:\[(\d+)\])?\(\1\)"#),
+        regex(#"\(\s*([a-zA-Z0-9$]+)\s*=\s*String\.fromCharCode\(110\)"#),
+        regex(#"([a-zA-Z0-9$]+)\s*=\s*function\([a-zA-Z0-9]\)\s*\{[^}]*?enhanced_except_"#),
     ]
+
+    private static func firstMatch(_ text: String, regex: NSRegularExpression) -> NSTextCheckingResult? {
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.firstMatch(in: text, options: [], range: range)
+    }
+
+    private static func capture(_ result: NSTextCheckingResult, _ text: String, at index: Int) -> String? {
+        guard index < result.numberOfRanges else { return nil }
+        let r = result.range(at: index)
+        guard r.location != NSNotFound, let swiftRange = Range(r, in: text) else { return nil }
+        return String(text[swiftRange])
+    }
 
     static func hasQArrayObfuscation(_ playerJs: String) -> Bool {
-        playerJs.contains(qArrayPattern)
+        firstMatch(playerJs, regex: qArrayRegex) != nil
     }
 
     static func extractPlayerHash(_ playerJs: String) -> String? {
-        for pattern in playerHashPatterns {
-            if let match = playerJs.firstMatch(of: pattern) {
-                return String(match.1)
+        for pattern in playerHashRegexes {
+            if let result = firstMatch(playerJs, regex: pattern), let hash = capture(result, playerJs, at: 1) {
+                return hash
             }
         }
         let content = String(playerJs.prefix(10000))
-        let digest = Insecure.MD5.hash(data: content.data(using: .utf8)!)
-        return digest.prefix(4).map { String(format: "%02x", $0) }.joined()
+        guard let data = content.data(using: .utf8) else { return nil }
+        return data.map { String(format: "%02x", $0) }.prefix(8).joined()
     }
 
     static func getHardcodedConfig(_ hash: String) -> HardcodedPlayerConfig? {
@@ -94,10 +109,10 @@ enum FunctionNameExtractor {
     }
 
     static func extractSigFunctionInfo(_ playerJs: String, knownHash: String? = nil) -> SigFunctionInfo? {
-        for pattern in sigFunctionPatterns {
-            if let match = playerJs.firstMatch(of: pattern) {
-                let name = String(match.1)
-                let constArg = match.output.count > 2 ? Int(String(match.2)) : nil
+        for pattern in sigFunctionRegexes {
+            if let result = firstMatch(playerJs, regex: pattern),
+               let name = capture(result, playerJs, at: 1) {
+                let constArg = capture(result, playerJs, at: 2).flatMap(Int.init)
                 return SigFunctionInfo(name: name, constantArg: constArg, constantArgs: nil, preprocessFunc: nil, preprocessArgs: nil, isHardcoded: false)
             }
         }
@@ -111,15 +126,23 @@ enum FunctionNameExtractor {
     }
 
     static func extractNFunctionInfo(_ playerJs: String, knownHash: String? = nil) -> NFunctionInfo? {
-        for (i, pattern) in nFunctionPatterns.enumerated() {
-            if let match = playerJs.firstMatch(of: pattern) {
+        for (i, pattern) in nFunctionRegexes.enumerated() {
+            if let result = firstMatch(playerJs, regex: pattern) {
                 switch i {
                 case 0:
-                    return NFunctionInfo(name: String(match.1), arrayIndex: Int(String(match.2)), constantArgs: nil, isHardcoded: false)
+                    if let name = capture(result, playerJs, at: 1) {
+                        let idx = capture(result, playerJs, at: 2).flatMap(Int.init)
+                        return NFunctionInfo(name: name, arrayIndex: idx, constantArgs: nil, isHardcoded: false)
+                    }
                 case 1:
-                    return NFunctionInfo(name: String(match.2), arrayIndex: Int(String(match.3)), constantArgs: nil, isHardcoded: false)
+                    if let name = capture(result, playerJs, at: 2) {
+                        let idx = capture(result, playerJs, at: 3).flatMap(Int.init)
+                        return NFunctionInfo(name: name, arrayIndex: idx, constantArgs: nil, isHardcoded: false)
+                    }
                 default:
-                    return NFunctionInfo(name: String(match.1), arrayIndex: nil, constantArgs: nil, isHardcoded: false)
+                    if let name = capture(result, playerJs, at: 1) {
+                        return NFunctionInfo(name: name, arrayIndex: nil, constantArgs: nil, isHardcoded: false)
+                    }
                 }
             }
         }
@@ -133,9 +156,13 @@ enum FunctionNameExtractor {
     }
 
     static func extractSignatureTimestamp(_ playerJs: String) -> Int? {
-        let patterns = [/signatureTimestamp['":\s]+(\d+)/, /sts['":\s]+(\d+)/, /"signatureTimestamp"\s*:\s*(\d+)/]
+        let patterns = [
+            regex(#"signatureTimestamp['":\s]+(\d+)"#),
+            regex(#"sts['":\s]+(\d+)"#),
+            regex(#""signatureTimestamp"\s*:\s*(\d+)"#),
+        ]
         for pattern in patterns {
-            if let match = playerJs.firstMatch(of: pattern), let ts = Int(String(match.1)) {
+            if let result = firstMatch(playerJs, regex: pattern), let ts = capture(result, playerJs, at: 1).flatMap(Int.init) {
                 return ts
             }
         }
