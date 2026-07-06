@@ -1,0 +1,71 @@
+name: Build IPA
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-ipa:
+    name: Build IPA for SideStore
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build for Device
+        run: |
+          xcodebuild build \
+            -project SpotUI.xcodeproj \
+            -scheme SpotUI \
+            -destination 'generic/platform=iOS' \
+            -configuration Release \
+            -derivedDataPath build/Release \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            ENABLE_BITCODE=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            2>&1 | tail -100
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          APP_PATH=$(find build/Release/Build/Products/Release-iphoneos -name "*.app" -maxdepth 1 | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No .app found"
+            find build/Release -name "*.app" -type d
+            exit 1
+          fi
+          echo "Found app: $APP_PATH"
+          cp -r "$APP_PATH" Payload/
+          zip -r -y SpotUI.ipa Payload
+          rm -rf Payload
+          echo "IPA created:"
+          ls -lh SpotUI.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpotUI-v${{ github.ref_name || 'dev' }}-IPA
+          path: SpotUI.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Release IPA
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: SpotUI.ipa
+          draft: false
+          prerelease: false
