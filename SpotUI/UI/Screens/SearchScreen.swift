@@ -66,7 +66,7 @@ struct SearchScreen: View {
             }
             .navigationTitle("Search")
             .searchable(text: $query, prompt: "What do you want to listen to?")
-            .onSubmit
+            .onChange(of: query) { newValue in
                 guard !newValue.isEmpty else { results = nil; return }
                 Task { await performSearch(newValue) }
             }

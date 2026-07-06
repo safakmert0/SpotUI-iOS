@@ -22,7 +22,7 @@ enum SpotifyMapper {
             album: spotifyTrack.album?.name ?? "",
             singer: singer,
             coverUri: cover,
-            url: AudioEngine.buildPlayQuery(
+            url: buildPlayQuery(
                 spotifyTrackId: spotifyTrack.id,
                 title: spotifyTrack.name,
                 artist: singer

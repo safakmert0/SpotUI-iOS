@@ -184,7 +184,7 @@ struct LyricsView: View {
                 }
                 .padding(.vertical, 50)
             }
-            .onChange(of: currentTime) { _, time in
+            .onChange(of: currentTime) { time in
                 if let activeLine = lyrics.lines.last(where: { Double($0.timeMs) / 1000.0 <= time }) {
                     withAnimation {
                         proxy.scrollTo(activeLine.id, anchor: .center)
