@@ -119,8 +119,8 @@ enum SpotifyRecommendationEngine {
 
         // Source 2: same-album tracks
         if let albumId = seedTrack.album?.id {
-            if let albumTracks = try? await SpotifyAPI.albumTracks(albumId: albumId) {
-                for track in albumTracks where !track.id.isEmpty && seenIds.insert(track.id).inserted {
+            if let albumPaging = try? await SpotifyAPI.albumTracks(albumId: albumId) {
+                for track in albumPaging.items where !track.id.isEmpty && seenIds.insert(track.id).inserted {
                     candidates.append(buildCandidate(track, bucket: .sameAlbum, seedPopularity: seedPopularity, seedGenres: seedGenres))
                 }
             }

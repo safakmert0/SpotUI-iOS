@@ -48,7 +48,9 @@ enum UpdateChecker {
 
     private static func extractVersion(_ text: String?) -> String? {
         guard let text else { return nil }
-        return text.firstMatch(of: /\d+(?:\.\d+)+/)?.output
+        let pattern = /\d+(?:\.\d+)+/
+        guard let match = text.firstMatch(of: pattern) else { return nil }
+        return String(match.output)
     }
 
     private static func isNewer(remote: String, installed: String) -> Bool {
