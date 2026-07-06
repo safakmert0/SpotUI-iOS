@@ -1,0 +1,98 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build iOS App
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Setup Xcode project (xcodegen)
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project SpotUI.xcodeproj \
+            -scheme SpotUI \
+            -clonedSourcePackagesDirPath SourcePackages
+
+      - name: Build (iOS Simulator)
+        run: |
+          xcodebuild build \
+            -project SpotUI.xcodeproj \
+            -scheme SpotUI \
+            -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.4' \
+            -configuration Debug \
+            -derivedDataPath build/Debug \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty
+
+      - name: Upload Build Artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpotUI-iOS-Build
+          path: build/Debug/Build/Products/Debug-iphonesimulator/SpotUI.app
+          retention-days: 7
+
+  build-release:
+    name: Build Release IPA
+    needs: build
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Setup Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build Release (Simulator)
+        run: |
+          xcodebuild build \
+            -project SpotUI.xcodeproj \
+            -scheme SpotUI \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Release \
+            -derivedDataPath build/Release \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty
+
+      - name: Create IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/Release/Build/Products/Release-iphonesimulator/SpotUI.app Payload/
+          zip -r SpotUI.ipa Payload
+          rm -rf Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpotUI-IPA
+          path: SpotUI.ipa
+          retention-days: 30
