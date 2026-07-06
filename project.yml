@@ -16,12 +16,7 @@ targets:
     type: application
     platform: iOS
     sources:
-      - path: SpotUI
-        excludes:
-          - "**/Assets.xcassets"
-    resources:
-      - path: SpotUI/Resources/Assets.xcassets
-        buildPhase: resources
+      - SpotUI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.music.spotui
