@@ -1,5 +1,7 @@
 import AVFoundation
 import Combine
+import MediaPlayer
+import UIKit
 
 /// Main audio playback engine. Port of SongPlayer.kt + PlaybackService.kt.
 /// Manages AVPlayer, stream resolution, queue, crossfade, downloads.
@@ -178,13 +180,13 @@ final class AudioEngine: ObservableObject {
 
     // MARK: - Build play query
 
-    nonisolated static func buildPlayQuery(spotifyTrackId: String, title: String, artist: String) -> String {
+    static func buildPlayQuery(spotifyTrackId: String, title: String, artist: String) -> String {
         let searchText = [cleanTitle(title), artist].filter { !$0.isEmpty }.joined(separator: " ")
         if spotifyTrackId.isEmpty { return searchText }
         return "spotify:track:\(spotifyTrackId)|\(searchText)"
     }
 
-    private nonisolated static func cleanTitle(_ title: String) -> String {
+    private static func cleanTitle(_ title: String) -> String {
         let pattern = try! NSRegularExpression(pattern: "\\s*[\\(\\[]\\s*(feat|ft)\\..*?[\\)\\]]", options: .caseInsensitive)
         let range = NSRange(title.startIndex..., in: title)
         return pattern.stringByReplacingMatches(in: title, options: [], range: range, withTemplate: "").trimmingCharacters(in: .whitespaces)
@@ -339,7 +341,3 @@ final class AudioEngine: ObservableObject {
         }
     }
 }
-
-// Import needed for MPNowPlayingInfoCenter
-import MediaPlayer
-import UIKit

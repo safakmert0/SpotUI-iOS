@@ -5,7 +5,6 @@ import Foundation
 final class InnerTube {
     static let shared = InnerTube()
 
-    private 
     private let baseURL = "https://music.youtube.com/youtubei/v1"
 
     var visitorData: String?

@@ -238,7 +238,7 @@ final class SpotifyWebPlayer: NSObject, ObservableObject {
 // MARK: - WKNavigationDelegate + WKScriptMessageHandler
 
 extension SpotifyWebPlayer: WKNavigationDelegate {
-    nonisolated func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         // Inject visibility spoof early
         let js = """
         (function(){
@@ -254,7 +254,7 @@ extension SpotifyWebPlayer: WKNavigationDelegate {
         webView.evaluateJavaScript(js)
     }
 
-    nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         Task { @MainActor in
             pageReady = webView.url?.host == "open.spotify.com"
             // Bootstrap JS for command API
@@ -275,7 +275,7 @@ extension SpotifyWebPlayer: WKNavigationDelegate {
 }
 
 extension SpotifyWebPlayer: WKScriptMessageHandler {
-    nonisolated func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any],
               let type = body["type"] as? String else { return }
         Task { @MainActor in
