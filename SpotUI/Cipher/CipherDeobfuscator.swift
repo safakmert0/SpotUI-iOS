@@ -9,12 +9,12 @@ enum CipherDeobfuscator {
 
     static func deobfuscateStreamUrl(signatureCipher: String, videoId: String) async -> String? {
         do {
-            return try await deobfuscateInternal(signatureCipher, videoId: videoId, isRetry: false)
+            return try await deobfuscateInternal(signatureCipher: signatureCipher, videoId: videoId, isRetry: false)
         } catch {
             PlayerJsFetcher.invalidateCache()
             closeWebView()
             do {
-                return try await deobfuscateInternal(signatureCipher, videoId: videoId, isRetry: true)
+                return try await deobfuscateInternal(signatureCipher: signatureCipher, videoId: videoId, isRetry: true)
             } catch {
                 return nil
             }
