@@ -83,8 +83,8 @@ enum LosslessResolver {
     private static func entityId(from platforms: [String: Any], platform: String) -> String? {
         guard let platformData = platforms[platform] as? [String: Any],
               let uniqueId = platformData["entityUniqueId"] as? String else { return nil }
-        let id = uniqueId.components(separatedBy: "::").last
-        return (id != uniqueId && !id.isEmpty) ? id : nil
+        guard let id = uniqueId.components(separatedBy: "::").last, !id.isEmpty, id != uniqueId else { return nil }
+        return id
     }
 
     private static func qobuzIdForIsrc(_ isrc: String) async -> String? {
