@@ -16,38 +16,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer || true
-
       - name: Install xcodegen
         run: brew install xcodegen
 
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: List generated files
-        run: |
-          ls -la *.xcodeproj 2>/dev/null || echo "No xcodeproj found"
-          ls -la *.xcodeproj/xcshareddata/xcschemes/ 2>/dev/null || echo "No schemes found"
+      - name: List available simulators
+        run: xcrun simctl list devices available | head -20
 
       - name: Build (iOS Simulator)
         run: |
           xcodebuild build \
             -project SpotUI.xcodeproj \
             -scheme SpotUI \
-            -destination 'platform=iOS Simulator,name=iPhone 16,OS=18.0' \
+            -destination 'generic/platform=iOS Simulator' \
             -configuration Debug \
             -derivedDataPath build/Debug \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            2>&1 | tail -50
+            2>&1 | tail -80
 
       - name: Upload Build Artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: SpotUI-iOS-Build
-          path: build/Debug/Build/Products/Debug-iphonesimulator/SpotUI.app
+          path: |
+            build/Debug/Build/Products/Debug-iphonesimulator/SpotUI.app
+            build/Debug/Build/Products/
+          if-no-files-found: warn
           retention-days: 7
