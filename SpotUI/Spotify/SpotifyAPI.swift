@@ -119,7 +119,8 @@ enum SpotifyAPI {
         let savedTracks = (tracksData["items"] as? [JSONObject] ?? []).compactMap { elem -> SpotifySavedTrack? in
             guard let trackWrapper = elem["track"] as? JSONObject, let trackData = trackWrapper["data"] as? JSONObject else { return nil }
             let wrapperUri = trackWrapper["_uri"] as? String ?? trackWrapper["uri"] as? String
-            return SpotifySavedTrack(track: parseGqlTrack(trackData, uriOverride: wrapperUri))
+            guard let track = parseGqlTrack(trackData, uriOverride: wrapperUri) else { return nil }
+            return SpotifySavedTrack(addedAt: elem["added_at"] as? String, track: track)
         }
         return SpotifyPaging(items: savedTracks, total: tracksData["totalCount"] as? Int ?? 0, limit: limit, offset: offset)
     }
