@@ -88,6 +88,28 @@ enum SpotifyAPI {
 
     static func track(_ trackId: String) async throws -> SpotifyTrack { try await restGet("tracks/\(trackId)") }
 
+    static func topTracks(timeRange: String = "medium_term", limit: Int = 50) async throws -> [SpotifyTrack] {
+        let paging: SpotifyPaging<SpotifyTrack> = try await restGet("me/top/tracks?time_range=\(timeRange)&limit=\(limit)")
+        return paging.items
+    }
+
+    static func topArtists(timeRange: String = "medium_term", limit: Int = 50) async throws -> [SpotifyArtist] {
+        let paging: SpotifyPaging<SpotifyArtist> = try await restGet("me/top/artists?time_range=\(timeRange)&limit=\(limit)")
+        return paging.items
+    }
+
+    static func artistRelatedArtists(artistId: String) async throws -> [SpotifyArtist] {
+        let data = try await getData(restBase + "artists/\(artistId)/related-artists", token: accessToken ?? "")
+        let json = try parseJSON(data)
+        return (json["artists"] as? [JSONObject] ?? []).compactMap { try? JSONDecoder().decode(SpotifyArtist.self, from: JSONSerialization.data(withJSONObject: $0)) }
+    }
+
+    static func show(_ showId: String) async throws -> SpotifyShow { try await restGet("shows/\(showId)") }
+
+    static func showEpisodes(showId: String, limit: Int = 50) async throws -> SpotifyPaging<SpotifyEpisode> {
+        try await restGet("shows/\(showId)/episodes?limit=\(limit)")
+    }
+
     // MARK: - Private
 
     private static let restBase = "https://api.spotify.com/v1/"

@@ -64,6 +64,7 @@ final class AudioEngine: ObservableObject {
         currentTrack = track
         currentSource = "YouTube"
         currentQuality = ""
+        ListeningHistory.shared.addToHistory(track)
         Task { await doPlay(track) }
     }
 

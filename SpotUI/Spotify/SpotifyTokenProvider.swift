@@ -19,6 +19,14 @@ final class SpotifyTokenProvider {
         return nil
     }
 
+    func invalidateToken() {
+        lock.lock()
+        cachedToken = nil
+        tokenExpiry = nil
+        SpotifyAPI.accessToken = nil
+        lock.unlock()
+    }
+
     /// Ensure we have a valid token. Returns true on success.
     @discardableResult
     func ensureToken() async -> Bool {

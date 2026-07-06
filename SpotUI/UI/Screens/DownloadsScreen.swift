@@ -36,5 +36,17 @@ struct DownloadsScreen: View {
             }
         }
         .navigationTitle("Downloads")
+        .task {
+            loadDownloads()
+        }
+    }
+
+    private func loadDownloads() {
+        let dir = UserPreferences.shared.downloadsDirectory
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { return }
+        tracks = files.compactMap { file in
+            let id = Int(file.deletingPathExtension().lastPathComponent) ?? 0
+            return Track(id: id, title: file.lastPathComponent, album: "Downloaded", singer: "", coverUri: "", url: file.absoluteString, spotifyTrackId: "", explicit: false, durationMs: 0)
+        }
     }
 }
