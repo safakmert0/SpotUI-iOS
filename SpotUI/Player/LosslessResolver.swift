@@ -122,7 +122,7 @@ enum LosslessResolver {
         let body: [String: Any] = ["id": id, "quality": quality]
         let bodyData = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, _) = try try await client.postRaw(
+        let (data, _) = try await client.postRaw(
             urlString,
             body: bodyData,
             contentType: "application/json",

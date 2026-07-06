@@ -53,7 +53,8 @@ struct HomeScreen: View {
     }
 
     private func loadData() async {
-        greeting = await dataService.homeFeed?.greeting ?? "Good evening"
+        let feed = await dataService.home()
+        greeting = feed.greeting.isEmpty ? "Good evening" : feed.greeting
         recentlyPlayed = await dataService.likedSongs().prefix(6).map { $0 }
     }
 }

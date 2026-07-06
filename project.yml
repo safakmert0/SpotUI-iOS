@@ -17,6 +17,8 @@ targets:
     platform: iOS
     sources:
       - SpotUI
+    resources:
+      - SpotUI/Resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.music.spotui
